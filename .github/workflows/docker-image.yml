@@ -1,0 +1,27 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+    
+env:
+  IMAGE: ajmadsen/jwt-auth-subreq
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Docker Login
+      env:
+        DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+      run: echo "$DOCKER_TOKEN" | docker login -u ajmadsen --password-stdin
+    - name: Build the Docker image
+      run: docker build . --file Dockerfile --tag $IMAGE:latest
+    - name: Push the image
+      run: docker push $IMAGE:latest
