@@ -63,6 +63,7 @@ func Debug(next http.Handler) http.Handler {
 			return
 		}
 		log.Printf("Got request:\n%s", string(b))
+		next.ServeHTTP(w, r)
 	})
 }
 
