@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -55,6 +56,34 @@ func VerifyToken(v *oidc.IDTokenVerifier) Middleware {
 	}
 }
 
+type ResponseLogger struct {
+	http.ResponseWriter
+	statusCode int
+	body       bytes.Buffer
+}
+
+func (rl *ResponseLogger) Header() http.Header {
+	return rl.ResponseWriter.Header()
+}
+
+func (rl *ResponseLogger) WriteHeader(statusCode int) {
+	rl.statusCode = statusCode
+	rl.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (rl *ResponseLogger) Write(b []byte) (int, error) {
+	rl.body.Write(b)
+	return rl.ResponseWriter.Write(b)
+}
+
+func NewResponseLogger(w http.ResponseWriter) *ResponseLogger {
+	return &ResponseLogger{
+		ResponseWriter: w,
+		statusCode:     -1,
+		body:           bytes.Buffer{},
+	}
+}
+
 func Debug(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, err := httputil.DumpRequest(r, false)
@@ -63,7 +92,17 @@ func Debug(next http.Handler) http.Handler {
 			return
 		}
 		log.Printf("Got request:\n%s", string(b))
-		next.ServeHTTP(w, r)
+
+		logger := NewResponseLogger(w)
+		next.ServeHTTP(logger, r)
+
+		log.Printf("Sent response: %d", logger.statusCode)
+		for k, vs := range logger.Header() {
+			for _, v := range vs {
+				log.Printf("\t%s: %s", k, v)
+			}
+		}
+		log.Printf("Body:\n%s", string(logger.body.Bytes()))
 	})
 }
 
