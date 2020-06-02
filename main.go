@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ var (
 	audience   = app.Flag("audience", "the expected audience of the JWT token").Envar("AUDIENCE").Required().String()
 	addrIP     = app.Flag("address", "address to listen for requests on").Default("::").ResolvedIP()
 	port       = app.Flag("port", "port to listen on").Default("3000").Int16()
+	debug      = app.Flag("debug", "enable logging of requests").Envar("DEBUG").Default("false").Bool()
 )
 
 func certsURL(authDomain string) string {
@@ -51,6 +53,17 @@ func VerifyToken(v *oidc.IDTokenVerifier) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func Debug(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := httputil.DumpRequest(r, false)
+		if err != nil {
+			log.Printf("could not dump request: %s", err.Error())
+			return
+		}
+		log.Printf("Got request:\n%s", string(b))
+	})
 }
 
 func Rescue(next http.Handler) http.Handler {
@@ -101,7 +114,13 @@ func main() {
 	keySet := oidc.NewRemoteKeySet(context.TODO(), certsURL(*authDomain))
 	verifier := oidc.NewVerifier(*authDomain, keySet, c)
 
-	middleware := compose(Rescue, VerifyToken(verifier))
+	var middleware Middleware
+	if !*debug {
+		middleware = compose(Rescue, VerifyToken(verifier))
+	} else {
+		middleware = compose(Rescue, Debug, VerifyToken(verifier))
+	}
+
 	http.Handle("/", middleware(http.HandlerFunc(NoContent)))
 	addr := net.JoinHostPort(addrIP.String(), strconv.Itoa(int(*port)))
 	log.Printf("listening on %s", addr)
